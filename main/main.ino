@@ -3,6 +3,24 @@
 #include <Wire.h>
 #include <Adafruit_PN532.h>
 
+const int SERVO_LOCK_US   = 1100;
+const int SERVO_UNLOCK_US = 1900;
+
+const int SERVO_PIN  = 18;
+const int SERVO_FREQ = 50;
+const int SERVO_RES  = 16;
+
+static inline uint32_t usToDuty(int us) {
+  const uint32_t period_us = 1000000UL / SERVO_FREQ; // 20000
+  const uint32_t maxDuty   = (1UL << SERVO_RES) - 1; // 65535
+  us = constrain(us, 0, (int)period_us);
+  return (uint32_t)((uint64_t)us * maxDuty / period_us);
+}
+
+static inline void servoWriteMicros(int us) {
+  ledcWrite(SERVO_PIN, usToDuty(us)); // note: uses PIN
+}
+
 Adafruit_PN532 nfc(-1, -1);
 const int blueLedPin = 2;
 
@@ -23,10 +41,32 @@ unsigned long lastStatusPoll = 0;
 
 void TaskPollLockStatus(void *pvParameters);
 
-void applyLockStatus(bool lockStatus) {
-  currentLockStatus = lockStatus;
-  digitalWrite(blueLedPin, lockStatus ? HIGH : LOW);
+void lockDoor() {
+  servoWriteMicros(SERVO_LOCK_US);
 }
+
+void unlockDoor() {
+  servoWriteMicros(SERVO_UNLOCK_US);
+}
+
+void applyLockStatus(bool lockStatus) {
+  if (lockStatus == currentLockStatus) return;
+
+  currentLockStatus = lockStatus;
+
+  digitalWrite(blueLedPin, lockStatus ? HIGH : LOW);
+
+  if (lockStatus) {
+    lockDoor();     // LOCK
+    Serial.println("Servo: LOCK");
+  } else {
+    unlockDoor();   // UNLOCK
+    Serial.println("Servo: UNLOCK");
+  }
+
+  delay(500);
+}
+
 
 bool parseLockStatus(const String& payload, bool& outStatus) {
   int idx = payload.indexOf("lock_status");
@@ -139,6 +179,10 @@ void setup() {
   pinMode(blueLedPin, OUTPUT);
   digitalWrite(blueLedPin, LOW); 
 
+  ledcAttach(SERVO_PIN, SERVO_FREQ, SERVO_RES);
+  servoWriteMicros(SERVO_LOCK_US);
+  delay(600);
+
   Serial.print("Connecting to WiFi ");
   Serial.println(ssid);
   WiFi.begin(ssid, password);
@@ -149,6 +193,8 @@ void setup() {
   Serial.println("\nConnected!");
   Serial.print("ESP32 IP Address: ");
   Serial.println(WiFi.localIP());
+
+  pollLockStatusFromDjango();
 
   nfc.begin();
   uint32_t versiondata = nfc.getFirmwareVersion();
