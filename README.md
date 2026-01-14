@@ -3,9 +3,9 @@
 This repository contains the embedded firmware for a smart lock system, built on an **ESP32** microcontroller.  
 It is one part of a **three-component architecture**:
 
-1. **Embedded firmware (this repo)** – Controls hardware (servo lock, NFC reader, LEDs) and communicates with the backend.
-2. **[Backend Repository](https://github.com/albertodsandoval/quicklock-be) ** – Handles authentication, card validation, lock state management, and APIs.
-3. **[Frontend Repository](https://github.com/DylanOseida/QuickLock-FE) ** – Provides a user interface for managing locks, users, and access permissions.
+1. [Embedded Repository](https://github.com/AlbertoRubalcava/QuickLock-Embedded) – Controls hardware (servo lock, NFC reader, LEDs) and communicates with the backend.
+2. [Backend Repository](https://github.com/albertodsandoval/quicklock-be) – Handles authentication, card validation, lock state management, and APIs.
+3. [Frontend Repository](https://github.com/DylanOseida/QuickLock-FE) – Provides a user interface for managing locks, users, and access permissions.
 
 ---
 
