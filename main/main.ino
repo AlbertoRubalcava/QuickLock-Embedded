@@ -25,17 +25,17 @@ static inline uint32_t usToDuty(int us) {
 }
 
 static inline void servoWriteMicros(int us) {
-  ledcWrite(SERVO_PIN, usToDuty(us)); // note: uses PIN
+  ledcWrite(SERVO_PIN, usToDuty(us)); 
 }
 
 const int blueLedPin = 2;
 
 const char* ssid = "name";
-const char* password = "pass";
+const char* password = "password";
 
 const char* DJANGO_BASE_URL = "http://192.168.X.X:8000"; 
-const char* CARD_REQUEST_PATH = "/embedded/card_request/";
-const char* STATUS_REQUEST_PATH  = "/embedded/request_status/";
+const char* CARD_REQUEST_PATH = "/access/Locks/";
+const char* STATUS_REQUEST_PATH  = "/access/Locks/";
 
 String lockId = "1";  
 bool currentLockStatus = false;   
@@ -62,90 +62,6 @@ void unlockDoor() {
   servoWriteMicros(SERVO_UNLOCK_US);
 }
 
-bool authenticateDESFireAES() {
-
-  uint8_t authCmd[] = { 
-    0x90, 0xAA, 0x00, 0x00, 
-    0x01, 0x00, 
-    0x00
-  };
-
-  uint8_t response[32];
-  uint8_t responseLength = sizeof(response);
-
-  if (!nfc.inDataExchange(authCmd, sizeof(authCmd), response, &responseLength)) {
-      Serial.println("Auth command failed");
-      return false;
-  }
-
-  if (responseLength != 16) {
-    Serial.println("Unexpected RndB length");
-    return false;
-  }
-
-  uint8_t rndB[16];
-
-  // Decrypt RndB
-  mbedtls_aes_context aes;
-  mbedtls_aes_init(&aes);
-  mbedtls_aes_setkey_dec(&aes, desfireKey, 128);
-  mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, response, rndB);
-
-  // Rotate RndB left
-  uint8_t rndB_rot[16];
-  memcpy(rndB_rot, rndB + 1, 15);
-  rndB_rot[15] = rndB[0];
-
-  // Generate RndA
-  uint8_t rndA[16];
-  for (int i = 0; i < 16; i++) {
-    rndA[i] = esp_random() & 0xFF;
-  }
-
-  // Prepare challenge = RndA || Rot(RndB)
-  uint8_t challenge[32];
-  memcpy(challenge, rndA, 16);
-  memcpy(challenge + 16, rndB_rot, 16);
-
-  // Encrypt challenge
-  uint8_t encChallenge[32];
-  mbedtls_aes_setkey_enc(&aes, desfireKey, 128);
-  mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_ENCRYPT, challenge, encChallenge);
-  mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_ENCRYPT, challenge + 16, encChallenge + 16);
-
-  mbedtls_aes_free(&aes);
-
-  // Send encrypted challenge
-  if (!nfc.inDataExchange(encChallenge, 32, response, &responseLength)) {
-    Serial.println("Challenge send failed");
-    return false;
-  }
-
-  if (responseLength != 16) {
-    Serial.println("Invalid RndA response");
-    return false;
-  }
-
-  uint8_t rndA_resp[16];
-
-  mbedtls_aes_init(&aes);
-  mbedtls_aes_setkey_dec(&aes, desfireKey, 128);
-  mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, response, rndA_resp);
-  mbedtls_aes_free(&aes);
-
-  // Rotate original RndA
-  uint8_t rndA_rot[16];
-  memcpy(rndA_rot, rndA + 1, 15);
-  rndA_rot[15] = rndA[0];
-
-  if (memcmp(rndA_rot, rndA_resp, 16) == 0) {
-    Serial.println("AES Mutual Authentication SUCCESS");
-    return true;
-  } else {
-    Serial.println("AES Mutual Authentication FAILED");
-    return false;
-  }
-}
 
 void applyLockStatus(bool lockStatus) {
   if (lockStatus == currentLockStatus) return;
@@ -170,14 +86,16 @@ bool parseLockStatus(const String& payload, bool& outStatus) {
   DeserializationError error = deserializeJson(doc, payload);
 
   if (error) {
-    return false;   // silently ignore
-  }
-
-  if (!doc.containsKey("result")) {
+    Serial.println("JSON parse failed");
     return false;
   }
 
-  outStatus = doc["result"];
+  if (!doc.containsKey("status")) {
+    Serial.println("No 'status' field in response");
+    return false;
+  }
+
+  outStatus = doc["status"];
   return true;
 }
 
@@ -188,34 +106,36 @@ void sendCardUIDToDjango(const String& uid) {
   }
 
   HTTPClient http;
-  String url = String(DJANGO_BASE_URL) + CARD_REQUEST_PATH;
+
+  String url = String(DJANGO_BASE_URL) +
+               CARD_REQUEST_PATH +
+               lockId +
+               "/card_unlock/";
 
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
 
-  String body = String("{\"lock_id\":") + lockId + ",\"uid\":\"" + uid + "\"}";
-  Serial.print("Request body: ");
+  String body = String("{\"uid\":\"") + uid + "\"}";
+
+  Serial.print("POST ");
+  Serial.println(url);
+  Serial.print("Body: ");
   Serial.println(body);
 
   int httpCode = http.POST(body);
+
   if (httpCode > 0) {
     String payload = http.getString();
-    Serial.print("card_request response (");
+
+    Serial.print("card_unlock response (");
     Serial.print(httpCode);
     Serial.print("): ");
-    Serial.println(payload); 
+    Serial.println(payload);
 
-    if (payload.length() == 0) {
-      http.end();
-      return;   // silently ignore empty response
-    }
+    pollLockStatusFromDjango();
 
-    bool lockStatus;
-    if (parseLockStatus(payload, lockStatus)) {
-      applyLockStatus(lockStatus);
-    }
   } else {
-    Serial.print("card_request POST failed, error: ");
+    Serial.print("card_unlock POST failed: ");
     Serial.println(http.errorToString(httpCode));
   }
 
@@ -229,23 +149,32 @@ void pollLockStatusFromDjango() {
   }
 
   HTTPClient http;
-  String url = String(DJANGO_BASE_URL) + STATUS_REQUEST_PATH;
+
+  String url = String(DJANGO_BASE_URL) +
+               STATUS_REQUEST_PATH +
+               lockId +
+               "/status/";
 
   http.begin(url);
-  http.addHeader("Content-Type", "application/json");
 
-  String body = String("{\"lock_id\":") + lockId + "}";
-  
-  int httpCode = http.POST(body);
+  int httpCode = http.GET(); 
+
   if (httpCode > 0) {
+
     String payload = http.getString();
+
+    Serial.print("Status GET (");
+    Serial.print(httpCode);
+    Serial.print("): ");
+    Serial.println(payload);
 
     bool lockStatus;
     if (parseLockStatus(payload, lockStatus)) {
       applyLockStatus(lockStatus);
     }
+
   } else {
-    Serial.print("request_status POST failed, error: ");
+    Serial.print("Status GET failed: ");
     Serial.println(http.errorToString(httpCode));
   }
 
@@ -264,15 +193,6 @@ void TaskPollLockStatus(void *pvParameters) {
 
     vTaskDelay(10 / portTICK_PERIOD_MS);
   }
-}
-
-void hexdump(const uint8_t *data, size_t len) {
-  for (size_t i = 0; i < len; ++i) {
-    if (data[i] < 0x10) Serial.print("0");
-    Serial.print(data[i], HEX);
-    Serial.print(" ");
-  }
-  Serial.println();
 }
 
 void setup() {
