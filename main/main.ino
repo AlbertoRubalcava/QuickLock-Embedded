@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include "secrets.h"
 #define NFC_INTERFACE_HSU
 
 #include <PN532_HSU.h>
@@ -10,8 +11,8 @@
 PN532_HSU pn532hsu(Serial1);
 PN532 nfc(pn532hsu);
 
-const int SERVO_LOCK_US   = 1100;
-const int SERVO_UNLOCK_US = 1900;
+const int SERVO_LOCK_US   = 2000;
+const int SERVO_UNLOCK_US = 1500;
 
 const int SERVO_PIN  = 18;
 const int SERVO_FREQ = 50;
@@ -30,10 +31,9 @@ static inline void servoWriteMicros(int us) {
 
 const int blueLedPin = 2;
 
-const char* ssid = "name";
-const char* password = "password";
+const char* ssid = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
 
-const char* DJANGO_BASE_URL = "http://192.168.X.X:8000"; 
 const char* CARD_REQUEST_PATH = "/access/Locks/";
 const char* STATUS_REQUEST_PATH  = "/access/Locks/";
 
