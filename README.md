@@ -14,8 +14,8 @@ It is one part of a **three-component architecture**:
 The ESP32 does the following tasks:
 
 - Reads NFC card UIDs using a **PN532** module over UART/HSU
-- Sends card UIDs to a **Django backend** over Wi-Fi (HTTP/JSON)
-- Polls the backend for lock state changes
+- Sends card UIDs to a **Django backend** over Wi-Fi (HTTP/JSON) at `/access/Locks/{lockId}/card_unlock/`
+- Polls `/access/Locks/{lockId}/status/` every second for lock state changes
 - Controls a **servo motor** to lock or unlock the door
 - Updates the blue LED to match the lock status
   
@@ -35,7 +35,7 @@ The ESP32 does the following tasks:
 
 ## Local Secrets
 
-Copy `main/secrets.example.h` to `main/secrets.h` and fill in your Wi-Fi name, Wi-Fi password, and backend URL. `main/secrets.h` is ignored by Git so local network credentials do not get committed.
+Copy `main/secrets.example.h` to `main/secrets.h` and fill in your Wi-Fi name, Wi-Fi password, and backend URL. `main/secrets.h` is ignored by Git so local network credentials do not get committed. The lock ID is set in `main/main.ino` as `lockId`.
 
 ---
 
